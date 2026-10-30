@@ -35,10 +35,9 @@ public class Parser {
 			whereCondition = parseWhereCondition();
 		}
 
-		// Optional semicolon
+		// semicolon
 		match(TokenType.SEMICOLON);
 
-		// Make sure nothing is left unparsed
 		consume(TokenType.EOF);
 
 		return new SelectStatement(columns, new TableReference(tableName),

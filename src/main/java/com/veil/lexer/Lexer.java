@@ -20,7 +20,7 @@ public class Lexer {
 
             char current = input.charAt(position);
 
-            // Ignore whitespace
+            // for whitespace
             if (Character.isWhitespace(current)) {
                 position++;
                 continue;
@@ -54,7 +54,7 @@ public class Lexer {
                 continue;
             }
 
-            // Words / identifiers / keywords
+            // words / identifiers / keywords
             if (Character.isLetter(current) || current == '_') {
 
                 StringBuilder word = new StringBuilder();
@@ -91,7 +91,7 @@ public class Lexer {
                 continue;
             }
 
-            // Numbers
+            // numbers
             if (Character.isDigit(current)) {
 
                 StringBuilder number = new StringBuilder();
@@ -110,7 +110,7 @@ public class Lexer {
                 continue;
             }
 
-            // Strings
+            // string
             if (current == '\'') {
 
                 position++;
@@ -140,7 +140,7 @@ public class Lexer {
             );
         }
 
-        // Always finish with EOF
+        // EOF - end of file
         tokens.add(new Token(TokenType.EOF, ""));
 
         return tokens;

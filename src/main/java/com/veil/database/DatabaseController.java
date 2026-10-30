@@ -1,33 +1,50 @@
+
 package com.veil.database;
 
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/database")
 public class DatabaseController {
 
-	private final DatabaseService databaseService;
+    private final JdbcTemplate jdbcTemplate;
 
-	public DatabaseController(DatabaseService databaseService) {
-		this.databaseService = databaseService;
-	}
+    public DatabaseController(JdbcTemplate jdbcTemplate) {
+        this.jdbcTemplate = jdbcTemplate;
+    }
 
-	@GetMapping
-	public Map<String, Object> getDatabaseInfo() {
+    @GetMapping
+    public Map<String, Object> getDatabaseMetadata() {
+        String database = jdbcTemplate.queryForObject(
+                "SELECT current_database()",
+                String.class
+        );
 
-		Map<String, Object> response = new HashMap<>();
+        List<Map<String, Object>> tables = jdbcTemplate.queryForList("""
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_type = 'BASE TABLE'
+                ORDER BY table_name
+                """);
 
-		response.put("database", databaseService.getDatabaseName());
+        List<Map<String, Object>> indexes = jdbcTemplate.queryForList("""
+                SELECT indexname, tablename
+                FROM pg_indexes
+                WHERE schemaname = 'public'
+                ORDER BY tablename, indexname
+                """);
 
-		response.put("tables", databaseService.getTables());
-
-		response.put("indexes", databaseService.getIndexes());
-
-		return response;
-	}
+        return Map.of(
+                "database", database,
+                "tables", tables,
+                "indexes", indexes
+        );
+    }
 }

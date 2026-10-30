@@ -2,8 +2,18 @@ package com.veil.explain;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.NonNull;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Service
 public class ExplainService {
@@ -18,72 +28,193 @@ public class ExplainService {
 	public PlanSummary explain(String sql) {
 
 		if (sql == null || sql.isBlank()) {
-			throw new IllegalArgumentException("SQL query cannot be empty.");
+			throw new IllegalArgumentException(
+					"SQL query cannot be empty.");
 		}
 
+		String explainSql = getExplainSql(sql);
+
+		String json = jdbcTemplate.queryForObject(
+				explainSql,
+				(resultSet, rowNum) -> resultSet.getString(1)
+		);
+
+		try {
+			JsonNode root = objectMapper.readTree(json);
+
+			if (root == null
+					|| !root.isArray()
+					|| root.isEmpty()
+					|| !root.get(0).has("Plan")) {
+
+				throw new IllegalStateException(
+						"PostgreSQL returned an unexpected execution-plan format.");
+			}
+
+			PlanSummary summary = extractPlan(root.get(0).get("Plan"));
+
+			populatePlanMetrics(summary);
+
+			return summary;
+
+		} catch (IllegalArgumentException e) {
+			throw e;
+		} catch (Exception e) {
+			throw new RuntimeException(
+					"Failed to parse PostgreSQL execution plan.", e);
+		}
+	}
+
+	private static @NonNull String getExplainSql(String sql) {
 		String query = sql.trim();
 
-		// Remove one trailing semicolon
+		// Remove one trailing semicolon.
 		if (query.endsWith(";")) {
 			query = query.substring(0, query.length() - 1).trim();
 		}
 
-		String upper = query.toUpperCase();
+		String upper = query.toUpperCase(Locale.ROOT);
 
-		// Only SELECT / WITH for now
-		if (!upper.startsWith("SELECT ") && !upper.startsWith("WITH ")) {
+		// Preserve the existing SELECT / WITH restriction.
+		if (!upper.startsWith("SELECT ")
+				&& !upper.startsWith("SELECT\n")
+				&& !upper.startsWith("SELECT\t")
+				&& !upper.startsWith("WITH ")
+				&& !upper.startsWith("WITH\n")
+				&& !upper.startsWith("WITH\t")) {
 
 			throw new IllegalArgumentException(
 					"Only SELECT or WITH queries are supported.");
 		}
 
-		// Prevent multiple statements
+		// Reject multiple statements.
 		if (query.contains(";")) {
-
 			throw new IllegalArgumentException(
 					"Multiple SQL statements are not allowed.");
 		}
 
+		// Ask PostgreSQL to plan the query, not execute it.
 		String explainSql = "EXPLAIN (FORMAT JSON) " + query;
-
-		String json = jdbcTemplate.queryForObject(explainSql,
-				(resultSet, rowNum) -> resultSet.getString(1));
-
-		try {
-
-			JsonNode root = objectMapper.readTree(json);
-
-			JsonNode plan = root.get(0).get("Plan");
-
-			return extractPlan(plan);
-
-		} catch (Exception e) {
-
-			throw new RuntimeException(
-					"Failed to parse PostgreSQL execution plan.", e);
-		}
+		return explainSql;
 	}
 
 	private PlanSummary extractPlan(JsonNode plan) {
 
 		PlanSummary summary = new PlanSummary();
 
-		summary.setNodeType(getText(plan, "Node Type", "Unknown"));
+		summary.setNodeType(
+				getText(plan, "Node Type", "Unknown"));
 
-		summary.setRelation(getText(plan, "Relation Name", "—"));
+		summary.setRelation(
+				getText(plan, "Relation Name", "NotAvailable"));
 
-		summary.setIndex(getText(plan, "Index Name", "—"));
+		summary.setIndex(
+				getText(plan, "Index Name", "NotAvailable"));
 
-		summary.setStartupCost(getDouble(plan, "Startup Cost"));
+		summary.setStartupCost(
+				getDouble(plan, "Startup Cost"));
 
-		summary.setTotalCost(getDouble(plan, "Total Cost"));
+		summary.setTotalCost(
+				getDouble(plan, "Total Cost"));
 
-		summary.setEstimatedRows(getLong(plan, "Plan Rows"));
+		summary.setEstimatedRows(
+				getLong(plan, "Plan Rows"));
+
+		summary.setStrategy(
+				getText(plan, "Strategy", "NotAvailable"));
+
+		summary.setScanDirection(
+				getText(plan, "Scan Direction", "NotAvailable"));
+
+		summary.setEstimatedWidth(
+				getDouble(plan, "Plan Width"));
+
+		summary.setParallelAware(
+				getBoolean(plan, "Parallel Aware"));
+
+		// analyze teh node using the available plan estimates
+		summary.setRecommendations(
+				generateRecommendations(plan, summary));
+
+		// recursively extract all child plan nodes
+		JsonNode plans = plan.get("Plans");
+
+		if (plans != null && plans.isArray()) {
+			List<PlanSummary> children = new ArrayList<>();
+
+			for (JsonNode child : plans) {
+				children.add(extractPlan(child));
+			}
+
+			summary.setChildren(children);
+		}
 
 		return summary;
 	}
 
-	private String getText(JsonNode node, String field, String defaultValue) {
+	// recopmendations part handler (feat: add ai generated ones for now stale ones)
+	private List<String> generateRecommendations(
+			JsonNode plan, PlanSummary summary) {
+
+		List<String> recommendations = new ArrayList<>();
+
+		String nodeType = summary.getNodeType();
+		long estimatedRows = summary.getEstimatedRows();
+		double totalCost = summary.getTotalCost();
+
+		if ("Seq Scan".equals(nodeType)) {
+			recommendations.add(
+					"Sequential scan detected on table '"
+							+ summary.getRelation()
+							+ "'. Review table size, filter selectivity, "
+							+ "and existing indexes before considering an index. "
+							+ "A sequential scan may be optimal for small tables."
+			);
+		}
+
+		if ("Sort".equals(nodeType)) {
+			recommendations.add(
+					"Sort operation detected. Review the sort cost and "
+							+ "query ordering requirements. An appropriate index "
+							+ "may help some queries, but this plan alone does "
+							+ "not establish that an index is beneficial."
+			);
+		}
+
+		if ("Nested Loop".equals(nodeType)
+				&& estimatedRows > 1000) {
+			recommendations.add(
+					"Nested Loop has an estimated output of "
+							+ estimatedRows
+							+ " rows. Review its child plans, join conditions, "
+							+ "and row estimates to determine whether the join "
+							+ "strategy is appropriate."
+			);
+		}
+
+		if (estimatedRows == 0) {
+			recommendations.add(
+					"PostgreSQL estimates zero output rows for this plan node. "
+							+ "Check whether the query predicates and table "
+							+ "statistics reflect the expected data."
+			);
+		}
+
+		if (totalCost >= 1000) {
+			recommendations.add(
+					"This plan node has a relatively high estimated cost "
+							+ "(" + totalCost + "). Inspect its child nodes "
+							+ "to identify which operations contribute most "
+							+ "to the plan cost."
+			);
+		}
+
+		return recommendations;
+	}
+
+	//helpers (formatters) (4)
+	private String getText(
+			JsonNode node, String field, String defaultValue) {
 
 		JsonNode value = node.get(field);
 
@@ -98,7 +229,8 @@ public class ExplainService {
 
 		JsonNode value = node.get(field);
 
-		if (value == null || value.isNull()) {
+		if (value == null || value.isNull()
+				|| !value.isNumber()) {
 			return 0.0;
 		}
 
@@ -109,10 +241,126 @@ public class ExplainService {
 
 		JsonNode value = node.get(field);
 
-		if (value == null || value.isNull()) {
-			return 0;
+		if (value == null || value.isNull()
+				|| !value.isNumber()) {
+			return 0L;
 		}
 
 		return value.asLong();
+	}
+
+	private boolean getBoolean(JsonNode node, String field) {
+
+		JsonNode value = node.get(field);
+
+		return value != null && value.asBoolean(false);
+	}
+
+	//helpers for metrics (5)
+	private void populatePlanMetrics(PlanSummary root) {
+		int[] counts = new int[4];
+
+		collectPlanMetrics(root, counts);
+
+		root.setPlanNodeCount(counts[0]);
+		root.setScanNodeCount(counts[1]);
+		root.setIndexScanCount(counts[2]);
+		root.setSequentialScanCount(counts[3]);
+		Set<String> allRecommendations = new LinkedHashSet<>();
+		collectRecommendations(root, allRecommendations);
+
+		root.setRecommendations(new ArrayList<>(allRecommendations));
+		root.setPlanSummary(buildPlanSummary(root, counts));
+	}
+
+	private void collectRecommendations(
+			PlanSummary node, Set<String> recommendations) {
+
+		if (node == null) {
+			return;
+		}
+
+		if (node.getRecommendations() != null) {
+			recommendations.addAll(node.getRecommendations());
+		}
+
+		if (node.getChildren() != null) {
+			for (PlanSummary child : node.getChildren()) {
+				collectRecommendations(child, recommendations);
+			}
+		}
+	}
+
+	private void collectPlanMetrics(PlanSummary node, int[] counts) {
+		if (node == null) {
+			return;
+		}
+
+		counts[0]++;
+
+		String type = node.getNodeType();
+
+		if (isScanNode(type)) {
+			counts[1]++;
+		}
+
+		if ("Index Scan".equals(type)
+				|| "Index Only Scan".equals(type)
+				|| "Bitmap Index Scan".equals(type)) {
+			counts[2]++;
+		}
+
+		if ("Seq Scan".equals(type)) {
+			counts[3]++;
+		}
+
+		if (node.getChildren() != null) {
+			for (PlanSummary child : node.getChildren()) {
+				collectPlanMetrics(child, counts);
+			}
+		}
+	}
+
+	private boolean isScanNode(String type) {
+		return type != null && (
+				type.equals("Seq Scan")
+						|| type.equals("Index Scan")
+						|| type.equals("Index Only Scan")
+						|| type.equals("Bitmap Heap Scan")
+						|| type.equals("Bitmap Index Scan")
+						|| type.equals("Tid Scan")
+						|| type.equals("Subquery Scan")
+						|| type.equals("Function Scan")
+						|| type.equals("Values Scan")
+						|| type.equals("CTE Scan")
+						|| type.equals("Foreign Scan")
+						|| type.equals("Sample Scan")
+		);
+	}
+
+	private String buildPlanSummary(PlanSummary root, int[] counts) {
+		StringBuilder summary = new StringBuilder();
+
+		summary.append("Root operation: ")
+				.append(root.getNodeType())
+				.append(". ");
+
+		summary.append("Plan nodes: ")
+				.append(counts[0])
+				.append(", scan nodes: ")
+				.append(counts[1])
+				.append(", index-related scans: ")
+				.append(counts[2])
+				.append(", sequential scans: ")
+				.append(counts[3])
+				.append(". ");
+
+		summary.append("Estimated output rows: ")
+				.append(root.getEstimatedRows())
+				.append("; estimated total cost: ")
+				.append(root.getTotalCost())
+				.append(" planner cost units.");
+
+		return summary.toString();
 	}
 }
