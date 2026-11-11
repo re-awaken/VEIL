@@ -3,7 +3,7 @@ package com.veil.explain;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jspecify.annotations.NonNull;
-import org.springframework.jdbc.core.JdbcTemplate;
+import com.veil.core.database.ExecutionPlanProvider;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -18,26 +18,26 @@ import java.util.Set;
 @Service
 public class ExplainService {
 
-	private final JdbcTemplate jdbcTemplate;
+	private final ExecutionPlanProvider executionPlanProvider;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
-	public ExplainService(JdbcTemplate jdbcTemplate) {
-		this.jdbcTemplate = jdbcTemplate;
+	public ExplainService(
+			ExecutionPlanProvider executionPlanProvider
+	) {
+		this.executionPlanProvider = executionPlanProvider;
 	}
 
 	public PlanSummary explain(String sql) {
 
 		if (sql == null || sql.isBlank()) {
 			throw new IllegalArgumentException(
-					"SQL query cannot be empty.");
+					"SQL query cannot be empty."
+			);
 		}
 
-		String explainSql = getExplainSql(sql);
+		String query = validateSql(sql);
 
-		String json = jdbcTemplate.queryForObject(
-				explainSql,
-				(resultSet, rowNum) -> resultSet.getString(1)
-		);
+		String json = executionPlanProvider.getExecutionPlan(query);
 
 		try {
 			JsonNode root = objectMapper.readTree(json);
@@ -48,7 +48,8 @@ public class ExplainService {
 					|| !root.get(0).has("Plan")) {
 
 				throw new IllegalStateException(
-						"PostgreSQL returned an unexpected execution-plan format.");
+						"PostgreSQL returned an unexpected execution-plan format."
+				);
 			}
 
 			PlanSummary summary = extractPlan(root.get(0).get("Plan"));
@@ -61,11 +62,13 @@ public class ExplainService {
 			throw e;
 		} catch (Exception e) {
 			throw new RuntimeException(
-					"Failed to parse PostgreSQL execution plan.", e);
+					"Failed to parse PostgreSQL execution plan.", e
+			);
 		}
 	}
 
-	private static @NonNull String getExplainSql(String sql) {
+	private static String validateSql(String sql) {
+
 		String query = sql.trim();
 
 		// Remove one trailing semicolon.
@@ -75,7 +78,7 @@ public class ExplainService {
 
 		String upper = query.toUpperCase(Locale.ROOT);
 
-		// Preserve the existing SELECT / WITH restriction.
+		// Allow SELECT and WITH queries only.
 		if (!upper.startsWith("SELECT ")
 				&& !upper.startsWith("SELECT\n")
 				&& !upper.startsWith("SELECT\t")
@@ -84,18 +87,18 @@ public class ExplainService {
 				&& !upper.startsWith("WITH\t")) {
 
 			throw new IllegalArgumentException(
-					"Only SELECT or WITH queries are supported.");
+					"Only SELECT or WITH queries are supported."
+			);
 		}
 
 		// Reject multiple statements.
 		if (query.contains(";")) {
 			throw new IllegalArgumentException(
-					"Multiple SQL statements are not allowed.");
+					"Multiple SQL statements are not allowed."
+			);
 		}
 
-		// Ask PostgreSQL to plan the query, not execute it.
-		String explainSql = "EXPLAIN (FORMAT JSON) " + query;
-		return explainSql;
+		return query;
 	}
 
 	private PlanSummary extractPlan(JsonNode plan) {
