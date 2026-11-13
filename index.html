@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   
+
+    <link rel = "stylesheet" href = "design.css">
+    <link rel = "stylesheet" href = "sidebar.css"> 
+    <link rel = "stylesheet" href = "content.css"> 
+    <link rel = "stylesheet" href = "connectionbar.css"> 
+    <!-- <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@200..900&display=swap" rel="stylesheet">
+     -->
+    <title>VEIL</title>
+    
+    
+    
+</head>
+<body>
+    <div class="app">
+
+        <aside class="sidebar">
+<div class="brand">
+      <div class="brand-name"><span class="brand-mark">&#9660;</span> VEIL</div>
+      <div class="brand-tag">Query Intelligence Platform</div>
+    </div>
+
+    <nav class="nav">
+      <a class="nav-item active" data-nav="analyzer"><span class="ico">&#9638;</span> Query Analyzer</a>
+      <a class="nav-item" data-nav="connections"><span class="ico">&#9636;</span> Database Connections</a>
+      
+      <a class="nav-item" data-nav="schema"><span class="ico">&#9638;</span> Schema Explorer</a>
+      <a class="nav-item" data-nav="saved"><span class="ico">&#9873;</span> Saved Queries</a> 
+      <a class="nav-item" data-nav="ai"><span class="ico">&#10022;</span> AI Recommendations</a> 
+      
+      
+    
+    
+
+    </nav>
+    
+
+    <div class="side-foot">
+      <span class="dot ok"></span>
+      <div>
+        <div class="side-foot-status" id="sideStatus">Connected</div>
+        <div class="side-foot-name" id="sideConn">Production PostgreSQL</div>
+      </div>
+    </div>
+  </aside>
+
+  
+
+<main class="content">
+
+    <section class="conn-bar">
+        <div class="field">
+            <label for="connSelect">Database Connection</label>
+            <div class="conn-select-wrap">
+                <select id ="connSelect">
+                    <option>Production PostgreSQL</option>
+                    <option>Staging MySQL</option>
+                    <option>Local SQLite</option>
+                </select>
+                <span class="conn-status">
+                    <span class="dot ok" id="connDot"></span>
+                <span id="connStatus">Connected</span></span>
+
+            </div>
+        </div>
+
+        <button class="btn-outline" id="addConnBtn">+Add Connection</button>
+        <div class="spacer"></div>
+
+        <div class="field">
+            <label for="dbType">Database Type</label>
+        <select id="dbType">
+            <option>PostgreSQL</option>
+            <option>MySQL</option>
+            <option>SQLite</option>
+            <option>SQL Server</option>
+            <option>Mongodb</option>
+        </select>
+        </div>
+
+        <div class="chips">
+            <span class="chip">&#10003; EXPLAIN</span>
+            <span class="chip">&#10003; Indexes</span>
+            <span class="chip">&#10003; Schema</span>
+            <span class="chip">&#10003; Transactions</span>
+        </div>
+        
+
+</section>
+
+ 
+
+<section class="row row-top">
+
+   <section class="left-part">
+        <div class="card-query">
+        <div class="card-head">
+            <h2>Query Editor</h2><span class="badge-sql">SQL</span>
+            <button class="btn-small push" id="formatTopBtn">Format</button>
+        </div>
+        <div class="card-body editor-body">
+            <div class="editor-wrap">
+                <pre class="line-nums" id="lineNums" aria-hidden="true"></pre>
+                <div class="code-area">
+              <pre class="sql-highlight" id="sqlHighlight" aria-hidden="true"></pre>
+              <textarea id="sqlInput" class="sql-input" wrap="off" spellcheck="false" placeholder="Paste your SQL query here...">SELECT u.id, u.name, u.email, o.total_amount
+FROM users u
+JOIN orders o ON u.id = o.user_id
+WHERE o.status = 'completed'
+  AND o.created_at > '2024-01-01'
+ORDER BY o.total_amount DESC
+LIMIT 10;</textarea>
+            </div>
+            </div>
+            <div id="errorBox" class="error-box" role="alert" hidden></div>
+            <div class="btn-row">
+                <button class="btn-primary" id="analyzeBtn">Analyze Query</button>
+                <button class="btn-ghost" id="formatBtn">Format SQL</button>
+                <button class="btn-ghost" id="clearBtn">Clear</button>
+                <span class="shortcut">ctrl + enter</span>
+            </div>
+        </div>
+    </div>
+    </section>
+
+    <section class="right-part">
+        
+    <div class="card">
+        <div class="card-head"><h2>Query Information</h2></div>
+        <div class="card-body">
+            <dl class="kv" id="queryInfo"></dl>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head"><h2>Database Schema</h2></div>
+        <div class="tabs">
+            <button class="tab-btn active" data-group="schema" data-target="schemaTables">Tables</button>
+            <button class="tab-btn" data-group="schema" data-target="schemaIndexes">Indexes</button>
+        </div>
+        <div class="card-body schema-body">
+            <input class="search" id="schemaSearch" placeholder="Search..." autocomplete="off">
+            <div class="tab-pane active" data-group="schema" id="schemaTables">
+                <ul class="list" id="tableList"></ul>
+            </div>
+            <div class="tab-pane" data-group="schema" id="schemaIndexes">
+                <ul class="list" id="indexList"></ul>
+            </div>
+        </div>
+    </div>
+
+</section>
+
+<section class="row row-mid">
+
+    <div class="card">
+        <div class="card-head"><h2>Execution Plan</h2></div>
+        <div class="tabs">
+            <button class="tab-btn active" data-group="plan" data-target="planTreePane">Tree View</button>
+            <button class="tab-btn" data-group="plan" data-target="planJson">JSON View</button>
+        </div>
+        <div class="card-body">
+            <div class="tab-pane active" data-group="plan" id="planTreePane">
+                <div id="planTree"></div>
+                <div id="viz"></div>
+            </div>
+            <div class="tab-pane" data-group="plan" id="planJson">
+                <pre class="json" id="planJsonOut"></pre>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head"><h2>Plan Details</h2></div>
+        <div class="card-body">
+            <dl class="kv" id="planDetails"></dl>
+            <h3 class="sub">Description</h3>
+            <p class="desc" id="planDesc"></p>
+        </div>
+    </div>
+
+</section>
+
+<section class="row row-bottom">
+    <div class="card">
+        <div class="card-head"><h2>Recommendations <span id="recCount">(0)</span></h2></div>
+        <div class="card-body rec-body">
+            <p class="ai-summary" id="aiText"></p>
+            <div id="recList"></div>
+        </div>
+    </div>
+
+</section>
+</main>
+</div>
+
+
+<div class="modal" id="connModal" hidden>
+  <div class="modal-box">
+    <h2>Add Connection</h2>
+    <label>Name<input id="newConnName" placeholder="e.g. Staging MySQL"></label>
+    <label>Type
+      <select id="newConnType">
+        <option>PostgreSQL</option><option>MySQL</option><option>SQLite</option><option>SQL Server</option>
+      </select>
+    </label>
+    <label>Host<input id="newConnHost" placeholder="localhost:5432"></label>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="cancelConn">Cancel</button>
+      <button class="btn-primary" id="saveConn">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="recModal" hidden>
+  <div class="modal-box">
+    <h3>AI Recommendations</h3>
+    <p class="desc">Your message here.</p>
+    <div class="modal-actions">
+      <button class="btn-primary" id="recModalClose" type="button">OK</button>
+    </div>
+  </div>
+</div>
+
+
+<div class="rec-toast" id="recToast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+
+
+<script src="script.js"></script>
+<script>
+
+document.querySelector('[data-nav="connections"]').addEventListener('click', function (e) {
+  e.preventDefault();               // stops the <a> from jumping or navigating
+  alert('Database Connections: coming soon!');
+
+
+});
+
+document.querySelector('[data-nav="schema"]').addEventListener('click', function (e) {
+  e.preventDefault();               // stops the <a> from jumping or navigating
+  alert('Schema Explorer: coming soon!');
+
+});
+
+  document.querySelector('[data-nav="saved"]').addEventListener('click', function (e) {
+  e.preventDefault();               // stops the <a> from jumping or navigating
+  alert('Saved Queries: coming soon!');
+
+
+});
+
+  document.querySelector('[data-nav="ai"]').addEventListener('click', function (e) {
+  e.preventDefault();               // stops the <a> from jumping or navigating
+  alert('AI Recommmendation: coming soon!');
+
+});
+
+
+
+</script>
+
+
+</body>
+</html>
